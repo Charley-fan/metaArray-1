@@ -811,3 +811,253 @@ def scale_check(v0, v1):
     return v0, v1
 
 
+
+
+def make_patch_spines_invisible(ax):
+    ax.set_frame_on(True)
+    ax.patch.set_visible(False)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    
+    return
+
+def multiplot(metaArylst, size = (10, 7.5), dpi = 75, grid = True, \
+                legend = 0, fontsize = 15, mode='inc', \
+                unitChk = True, title = False, group_y = True, \
+                fig = None, ax = None):
+    """
+    metaArray function to put the specified list of metaArrays in to a 1D plot.
+    
+    metaArylst      [metAry1, metAry2, ... metAryN] List of 1-D metaAry
+    size            Plot size, default to (10, 7.5)
+    dpi             Dot Per Inch for raster graphics
+    grid            Display grid
+    fontsize        Norminal font size
+    mode            ['inc'|'exc'] 
+    unitChk         Whether to check if all metArys has the same x-axis unit
+    title           Whether to generate figure title, if title is string, use it as is.
+    group_y         Identical metArys['unit'] are default to use the same y-axis scale
+    
+    legend:
+        'best'  0
+        'upper right'   1
+        'upper left'    2
+        'lower left'    3
+        'lower right'   4
+        'right'         5
+        'center left'   6
+        'center right'  7
+        'lower center'  8
+        'upper center'  9
+        'center'        10
+    
+    mode:
+        'inc'       Inclusive, plot all data (x-axis) ranges
+        'exc'       Exclusive, plot only common (x-axis) ranges to all data
+    
+    
+    label       Label for the legend display, default to metaAry['range']['label'][0]
+    
+    """
+        
+    if legend is None: legend = -1
+    
+    # First pass, work out the overall axis range
+    
+    xunit = metaArylst[0].get_range(0, 'unit')
+    
+    x0 = metaArylst[0].get_range(0, 'begin')
+    x1 = metaArylst[0].get_range(0, 'end')
+    
+    # unitChk Make sure they have identical x-units:
+    if unitChk:
+        for metAry in metaArylst:
+            if metAry.get_range(0, 'unit') != xunit: 
+                raise UnitError, "Axis unit description do no match (" + str(metAry['name']) + ")"
+    
+    # Identify the x ranges
+    if mode is 'inc':
+        for metAry in metaArylst:
+            if metAry.get_range(0, 'begin') < x0: x0 = metAry.get_range(0, 'begin')
+            if metAry.get_range(0, 'end') > x1: x1 = metAry.get_range(0, 'end')
+    else:
+        for metAry in metaArylst:
+            if metAry.get_range(0, 'begin') > x0: x0 = metAry.get_range(0, 'begin')
+            if metAry.get_range(0, 'end') < x1: x1 = metAry.get_range(0, 'end')
+    
+    # Define the x-axis
+    # x0
+    # x1
+    # xunit
+    # xscale
+    # xlabl
+    xunit, x0_scl, x1_scl, xscale = prettyunit(xunit, x0, x1)
+    xlabl = lbl_repr(axis['label'][0], xunit)
+    
+    # Check how many y-axies are necessary
+    y_lst = {}
+    for idx in range(len(metaArylst)):
+        
+        metAry = metaArylst[idx]
+        yunit = metAry['unit']
+        
+        if group_y:
+            
+            if y_lst.has_key(yunit):
+                
+                if y_lst[yunit]['y0'] > metAry.data.min():
+                    y_lst[yunit]['y0'] = metAry.data.min()
+                
+                if y_lst[yunit]['y1'] < metAry.data.max():
+                    y_lst[yunit]['y1'] = metAry.data.max()
+            else:
+                y_lst[yunit] = {}
+                y_lst[yunit]['y0'] = metAry.data.min()
+                y_lst[yunit]['y1'] = metAry.data.max()
+                y_lst[yunit]['yunit'] = yunit
+                y_lst[yunit]['ylabl'] = metaAry['label']
+        else:
+            idx_str = str(idx)
+            y_lst[idx_str] = {}
+            y_lst[idx_str]['y0'] = metAry.data.min()
+            y_lst[idx_str]['y1'] = metAry.data.max()
+            y_lst[idx_str]['yunit'] = yunit
+            y_lst[idx_str]['ylabl'] = metaAry['label']
+    
+    # Per y-axis defnitions
+    # y0
+    # y1
+    # yunit
+    # yscale
+    # ylabl
+    for ykey in y_lst.keys():
+        
+        y0 = y_lst[ykey]['y0']
+        y1 = y_lst[ykey]['y1']
+        yunit = y_lst[ykey]['yunit']
+        ylabl = y_lst[ykey]['ylabl']
+        
+        # Leave 10% margin in the y axis
+        ymean = average((y0, y1))
+        yreach = abs(y0-y1) / 2 / 0.9
+        y0 = sign(y0-mean) * reach + mean
+        y1 = sign(y1-mean) * reach + mean
+        
+        y0, y1 = scale_check(y0, y1)
+        
+        # Apply unit prefix if unit is defined
+        yunit, y0, y1, yscale = prettyunit(yunit, y0, y1)
+        
+        # Update the label
+        ylabl = lbl_repr(ylabl, yunit)
+        
+        y_lst[ykey]['y0'] = y0
+        y_lst[ykey]['y1'] = y1
+        y_lst[ykey]['yunit'] = yunit
+        y_lst[ykey]['yscale'] = yscale
+        y_lst[ykey]['ylabl'] = ylabl
+    
+    
+    #Generate the fig
+    if fig is None:
+        fig = figure(figsize=size, dpi = dpi)
+        fig.subplots_adjust(right=0.75)
+    
+    if ax is None:
+        ax0 = fig.add_subplot(111)
+    else:
+        ax0 = ax
+    
+    # Generate the ax
+    ykeys = y_lst.keys()
+    ykey = ykeys[0]
+    y_lst[ykey]['ax'] = ax0
+    
+    for ykey in ykeys[1:]:
+        y_lst[ykey]['ax'] = ax0.twinx()
+    
+    for ykey in ykeys[2:]:
+        ax = y_lst[ykey]['ax']
+         
+        # Offset the right spine of par2.  The ticks and label have already been
+        # placed on the right by twinx above.
+        ax.spines["right"].set_position(("axes", 1.2))
+        # Having been created by twinx, par2 has its frame off, so the line of its
+        # detached spine is invisible.  First, activate the frame but make the patch
+        # and spines invisible.
+        make_patch_spines_invisible(ax)
+        # Second, show the right spine.
+        ax.spines["right"].set_visible(True)
+    
+    # Plot each metaArray in the list
+    line_lst = []
+    for idx in range(len(metaArylst)):
+        # x0, x1
+        # xunit, xscale, xlabl, x0_scl, x1_scl
+        
+        if mode is 'inc':
+            metAry = metaArylst[idx]
+        else: # Exclusive mode
+            metAry = metaArylst[idx][float(x0):float(x1)]
+        
+        if group_y:
+            ykey = metAry['unit']
+        else:
+            ykey = str(idx)
+        
+        # y0, y1, yscale, yunit, ylabl, ax
+        yscale = y_lst[ykey]['yscale']
+        ax = y_lst[ykey]['ax']
+        
+        # Obtain the scaled data pair
+        x_axis = metaAry.get_axis() * xscale
+        data_val = metaAry.data * yscale
+        
+        pax, = ax.plot(x_axis, data_val, label=metAry['name'])
+        
+        line_lst.append(pax)
+    
+    # Set plot limits
+    
+    # x0, x1
+    # xunit, xscale, xlabl
+    # ax0
+    ax0.set_xlim([x0_scl, x1_scl])
+    ax0.set_xlabel(xlabl, fontsize=fontsize)
+    ax0.grid(grid)
+       
+    ax_lst = []
+    for ykey in y_lst.keys():
+        
+        y0 = y_lst[ykey]['y0']
+        y1 = y_lst[ykey]['y1']
+        ylabl = y_lst[ykey]['ylabl']
+        ax = y_lst[ykey]['ax']
+        
+        ax.set_ylim([y0, y1])
+        ax.set_ylabel(ylabl, fontsize=fontsize)
+        ax_lst.append(ax)
+    
+    if legend >= 0:
+        ax0.legend(line_lst, [l.get_label() for l in line_lst])
+        ax0.legend(loc=legend)
+    
+    
+    # Define the title
+    if isinstance(title, str):
+        # Use the title string as is
+        if fontsize is not None:
+            ax0.set_title(title, fontsize=int(fontsize*1.3))
+        else:
+            ax0.set_title(title)
+    elif title:
+        t_lst = []
+        for metAry in metaArylst:
+            t_lst.append(metAry['name'])
+        
+        title = 'Comparison between ' + ' & '.join(t_lst)
+     
+    return fig, ax_lst
+
+
+
